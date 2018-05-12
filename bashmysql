@@ -1,0 +1,348 @@
+#!/bin/bash
+
+# This script runs the query twice, once to collect the metadata, and
+# again to parse the results.  Making two passes simplifies the parsing
+# because the only format that includes metatdata also passes the results
+# in a table form that is much harder to parse than the other options.
+# When collecting metadata, the program modifies the query for an empty
+# result set (with WHERE 1=0) to avoid collecting results twice.
+#
+
+declare BMS_DBNAME
+declare BMS_QUERY
+
+# These values hold values for printing a Record SEParator (RSEP) and a Field SEParator (FSEP)
+# These values can be used for IFS values to later parse the string into records of fields.
+declare RSEP=$'\a'    # \007
+declare FSEP=$'\006'
+declare VSEP=$':'
+
+declare awk_split_from_meta
+declare awk_split_into_columns
+declare awk_split_into_props
+
+declare -a META_COLUMNS
+declare -a RESULT_COLUMN_NAMES
+declare -a RESULT_ROWS
+
+show_usage()
+{
+    echo "bashmysql usage:"
+    echo "./bashmysql <database name> <query> [<separators string>]"
+    echo
+    echo "separators string, if included, is a three-character string"
+    echo "the characters of which are, in order, the Record SEParator,"
+    echo "the Field SEParator, and the Value SEParator."
+}
+
+## parse_arguments
+# Set global variables from the bashmysql command line.
+# Sets exit status to 0 if everything is OK, non-zero if an
+# error.
+parse_arguments()
+{
+    local -i argcount=$#
+    if [ $argcount -lt 2 ]; then
+        show_usage
+        return 1
+    else
+        BMS_DBNAME="$1"
+        BMS_QUERY="$2"
+
+        if [ $argcount -gt 2 ]; then
+            RSEP="${3:0:1}"
+            FSEP="${3:1:1}"
+            VSEP="${3:2:1}"
+        fi
+    fi
+
+    # Awk commands now that we have the RSEP value to use for the ORS:
+    awk_split_from_meta="BEGIN{RS=\"\n\n\n\"; ORS=\"${RSEP}\";}{print}"
+    awk_split_into_columns="BEGIN{RS=\"\n\n\"; ORS=\"${RSEP}\";}{print}"
+    awk_split_into_props="BEGIN{RS=\"\n\"; ORS=\"${RSEP}\";}{print}"
+
+    return 0
+}
+
+
+### trim_string
+# This function processes a string to remove leading and trailing spaces,
+# as well as back-quotes when a string is thus enclosed.
+
+# Regular expression with sub-match of string between leading and
+# trailing spaces:
+ts_re='([[:space:]]*)(.*)([[:space:]]*)'
+
+trim_string()
+{
+   local str="$1"
+   local tval
+
+   [[ $str =~ ${ts_re} ]]
+   local exval=$?
+   if [ $exval -eq 0 ]; then
+       tval="${BASH_REMATCH[2]}"
+       if [ "${tval:0:1}" == '`' ] && [ "${tval: -1:1}" == '`' ]; then
+           echo -n "${tval:1: -1}"
+       else
+           echo -n "${tval}"
+       fi
+   elif [ $exval -eq 1 ]; then
+      echo "?${str}?" >&2
+   elif [ $exval -eq 2 ]; then
+       echo "Bad Regexp" >&2
+   fi
+
+   exit $exval
+}
+
+serialize_column()
+{
+    local column="$1"
+    local IFS="${RSEP}"
+    local -i exval
+
+    local -a props_arr
+    local -a posarr
+    local -a first_prop
+
+    props_arr=( $( echo "${column}" | awk "${awk_split_into_props}" - ) )
+    exval=$?
+    if [ $exval -ne 0 ]; then
+        echo "awk failed in serialze_column ($exval)" >&2
+        return 1
+    fi
+
+    # Process the first property separately: it contains two values:
+    # the position and the column name.
+    # Split property, then split the propery name for the position
+    IFS=$':'; first_prop=( $(echo "${props_arr[0]}") )
+    IFS=$' '; posarr=( $( trim_string "${first_prop[0]}" ) )
+
+    local -a pfarr=(
+        "Name${VSEP}%s${FSEP}Position${VSEP}%s"
+        $( trim_string "${first_prop[1]}" )
+        $( trim_string "${posarr[1]}")
+    )
+
+    printf "${pfarr[@]}"
+
+    # All subsequent properties will be split on the colon to trim extra
+    # spaces, applying the ${VSEP} value to separate the names from the
+    # values.
+    IFS=":"
+
+    local prop parr name val
+
+    # Process the remainder of the properties
+    for prop in "${props_arr[@]:1}"; do
+        parr=( $(echo "$prop") )
+        if [ "${parr[0]}" != "Collation:" ]; then
+            name=$( echo "${parr[0]}" )
+            val=$( trim_string "${parr[1]}" )
+            echo -n "${FSEP}${name}${VSEP}${val}"
+        fi
+    done
+
+    return 0
+}
+
+# Breaks down full raw input from metadata.  Each set of column data is separated
+# by an empty line, which is recognized as two consecutive newline characters.
+# Each set of column data, once isolated, is further broken down by serialize_column().
+serialize_columns()
+{
+    local columns="$1"
+
+    local IFS="${RSEP}"
+    local -i exval
+    local -a arr
+
+    arr=( $( echo "${columns}" | awk "${awk_split_into_columns}" - ) )
+    exval=$?
+    if [ $exval -ne 0 ]; then
+        echo "awk failed in serialize columns ($exval)" >&2
+        return 1
+    fi
+
+    local col
+    local -i first=1
+
+    for col in "${arr[@]}"; do
+        # Conserve record separators by adding only before records above #1:
+        if [ "$first" -eq 1 ]; then
+            first=0
+        else
+            echo -n "${RSEP}"
+        fi
+        serialize_column "${col}"
+    done
+}
+
+
+# truncate_query_for_metadata
+# 
+# This function attempts to modify the query for an empty resultset in
+# order to harvest the result columns' metadata.
+truncate_query_for_metadata()
+{
+   local awks="BEGIN{RS=\"WHERE|LIMIT|GROUP BY|HAVING|ORDER BY\"; ORS=\"${RSEP}\";}{print \$0}"
+   local IFS="${RSEP}"
+   local -a qarr=( $( echo "${BMS_QUERY}" | awk "${awks}" - ) )
+   if [ $? -eq 0 ]; then
+      echo "${qarr[0]} WHERE 1=0"
+      exit 0
+   else
+      exit 1
+   fi
+}
+
+## get_arrstr_RESULT_ROWS
+#
+# Rerun the query with options to get tab-separated values from
+# newline-separated records, transpose the data to records separated
+# by the RSEP character and columns separated by the FSEP character.
+get_arrstr_RESULT_ROWS()
+{
+    local -a qarr
+    local -a rows_arr
+    local -a cols_arr
+    local result
+    local -i exval
+
+    qarr=(
+        -B -N
+        "${BMS_DBNAME}"
+        -e
+        "${BMS_QUERY}"
+    )
+
+    result=$( mysql "${qarr[@]}" )
+    exval=$?
+    if [ $exval -ne 0 ]; then
+        echo "MySQL query failed (${exval})" >&2
+        return 1
+    fi
+
+    local IFS=$'\n'
+    rows_arr=( $( echo "${result}" ) )
+
+    local -i first=1
+    for row in "${rows_arr[@]}"; do
+        if [ $first -eq 1 ]; then
+            first=0
+        else
+            echo -n "${RSEP}"
+        fi
+
+        IFS=$'\t'
+        cols_arr=( $( echo "${row}" ) )
+        IFS="${FSEP}"
+        echo -n "${cols_arr[*]}"
+    done
+
+    return 0
+}
+
+# get_arrstr_RESULT_COLUMN_NAMES
+#
+# Uses META_COLUMNS array to return an array-parsable string of
+# column names.
+get_arrstr_RESULT_COLUMN_NAMES()
+{
+    local -i exval
+    local col name
+    local -a props
+    local -a prop
+    local IFS
+
+    local -i first=1
+
+    for col in "${META_COLUMNS[@]}"; do
+        if [ $first -eq 1 ]; then
+            first=0
+        else
+            echo -n "${RSEP}"
+        fi
+
+        IFS="${FSEP}"
+        props=( $( echo "${col}" ) )
+        IFS="${VSEP}"
+        prop=( $( echo "${props[0]}" ) )
+        echo -n "${prop[1]}"
+    done
+}
+
+# get_arrstr_META_COLUMNS
+#
+# This function tries to run the query with an empty resultset in order
+# to read the metadata.  Its output is a string with that can be parsed
+# into an array of column metadata.
+#
+get_arrstr_META_COLUMNS()
+{
+    # Since we're setting LIMIT 0, we won't have any data, so the result
+    # will not have a \n\n\n separating the columns from the data.
+    # We just pass the result to serialize_columns
+
+    local -a mcmd
+    local result
+
+    local tquery=$( truncate_query_for_metadata )
+    local -i exval=$?
+
+    if [ $exval -eq 0 ]; then
+        qarr=(
+            "${BMS_DBNAME}"
+            -t -N --column-type-info
+            -e
+            "${tquery}"
+        )
+        result=$( mysql "${qarr[@]}" )
+        exval=$?
+        if [ $exval -eq 0 ]; then
+           serialize_columns "${result}"
+        else
+            echo "Error with MySQL query ($exval)" >&2
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+main()
+{
+    local -i exval
+
+    local IFS="${RSEP}"
+    META_COLUMNS=( $( get_arrstr_META_COLUMNS ) )
+    exval=$?
+
+    if [ $exval -eq 0 ]; then
+        RESULT_COLUMN_NAMES=( $( get_arrstr_RESULT_COLUMN_NAMES ) )
+        exval=$?
+    fi
+    
+    # declare -p RESULT_COLUMN_NAMES
+
+    if [ $exval -eq 0 ]; then
+        IFS="${RSEP}"
+        RESULT_ROWS=( $( get_arrstr_RESULT_ROWS ) )
+        exval=$?
+    fi
+
+    echo "result rows are"
+    IFS=$'\n'
+    echo "${RESULT_ROWS[*]}"
+}
+
+
+parse_arguments "$@"
+exval=$?
+if [ $exval -eq 0 ]; then
+    main
+    exval=$?
+fi
+
+exit $exval
