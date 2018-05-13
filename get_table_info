@@ -1,0 +1,89 @@
+#!/bin/bash
+
+row_user()
+{
+    local name="${CURROW['COLUMN_NAME']}"
+    local dtype="${CURROW['DATA_TYPE']}"
+    local default="${CURROW['COLUMN_DEFAULT']}"
+
+    echo -n "${name} is a ${dtype}"
+    if [ -n "${default}" ]; then
+        echo -n " with default='${default}'"
+    fi
+    echo
+}
+
+export -f row_user
+
+get_table_columns()
+{
+    local dbname="$1"
+    local tname="$2"
+
+    local query="\
+SELECT COLUMN_NAME,
+       UPPER(DATA_TYPE) AS DATA_TYPE,
+       CHARACTER_MAXIMUM_LENGTH,
+       COLUMN_TYPE,
+       CASE WHEN INSTR(EXTRA,'auto_increment') THEN 'YES' ELSE NULL END AS autoinc,
+       CASE WHEN INSTR(COLUMN_KEY,'PRI') THEN 'YES' ELSE NULL END AS prikey,
+       NULLIF(IS_NULLABLE,'NO') AS nullable,
+       NUMERIC_PRECISION,
+       NUMERIC_SCALE,
+       COLUMN_DEFAULT
+  FROM COLUMNS
+ WHERE TABLE_SCHEMA='${dbname}' AND TABLE_NAME='${tname}'"
+
+    echo "In database '${dbname}', table '${tname}' has the following columns:"
+    ./bashmysql "information_schema" "${query}" -c row_user
+
+}
+
+simple_test()
+{
+    ./bashmysql MenuOrder "SELECT * FROM Day" -c row_user
+}
+
+is_array_member()
+{
+    target="$1"
+    for candidate in "${@:2}"; do
+        if [ "$target" == "$candidate" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+
+dbname="$1"
+tname="$2"
+
+if [ $# -lt 2 ]; then
+    echo "Usage: ./get_table_info <database> <table>"
+    exit 1
+fi
+
+
+dbases=( $( mysql -BN -e 'show databases' ) )
+if is_array_member "$dbname" "${dbases[@]}" ; then
+    tables=( $( mysql "$dbname"  -BN -e 'show tables' ) )
+    if is_array_member "$tname" "${tables[@]}" ; then
+        get_table_columns "$dbname" "$tname"
+    else
+        echo "Table '${tname}' not found in database '${dbname}'." >&2
+        echo "These are the tables in database '${dbname}':" >&2
+        printf "'%s'\n" "${tables[@]}" >&2
+        echo >&2
+        exit 1
+    fi
+else
+    echo "Database '${dbname}' not found on this MySQL server." >&2
+    echo "These are the databases on this server:" >&2
+    printf "'%s'\n" "${dbases[@]}" >&2
+    echo >&2
+    exit 1
+fi
+
+
+
