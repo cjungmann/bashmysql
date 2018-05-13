@@ -17,6 +17,8 @@ declare RSEP=$'\a'    # \007
 declare FSEP=$'\006'
 declare VSEP=$':'
 
+declare CB_NAME
+
 declare awk_split_from_meta
 declare awk_split_into_columns
 declare awk_split_into_props
@@ -28,7 +30,7 @@ declare -a RESULT_ROWS
 show_usage()
 {
     echo "bashmysql usage:"
-    echo "./bashmysql <database name> <query> [<separators string>]"
+    echo "./bashmysql <database name> <query> [-s <separators string>] [-c <callback>]"
     echo
     echo "separators string, if included, is a three-character string"
     echo "the characters of which are, in order, the Record SEParator,"
@@ -49,11 +51,25 @@ parse_arguments()
         BMS_DBNAME="$1"
         BMS_QUERY="$2"
 
-        if [ $argcount -gt 2 ]; then
-            RSEP="${3:0:1}"
-            FSEP="${3:1:1}"
-            VSEP="${3:2:1}"
-        fi
+        local arg
+        local state
+        
+        for arg in "${@:2}"; do
+            if [ "$arg" == '-s' ]; then
+                state="separator"
+            elif [ "$arg" == '-c' ]; then
+                state="callback"
+            else
+                if [ "$state" == "separator" ]; then
+                    RSEP="${arg:0:1}"
+                    FSEP="${arg:1:1}"
+                    VSEP="${arg:2:1}"
+                elif [ "$state" == "callback" ]; then
+                    CB_NAME="${arg}"
+                fi
+                state=
+            fi
+        done
     fi
 
     # Awk commands now that we have the RSEP value to use for the ORS:
@@ -324,17 +340,44 @@ main()
         exval=$?
     fi
     
-    # declare -p RESULT_COLUMN_NAMES
-
     if [ $exval -eq 0 ]; then
         IFS="${RSEP}"
         RESULT_ROWS=( $( get_arrstr_RESULT_ROWS ) )
         exval=$?
     fi
 
-    echo "result rows are"
-    IFS=$'\n'
-    echo "${RESULT_ROWS[*]}"
+    if [ $exval -eq 0 ]; then
+        local -i ndx
+        local rowstr IFS name val
+        local -a row
+        local -A CURROW
+
+        if [ -n CB_NAME ]; then
+            for rowstr in "${RESULT_ROWS[@]}"; do
+                IFS="${FSEP}"
+                row=( $( echo "${rowstr}" ) )
+                ndx=0
+                CURROW=()
+                for name in "${RESULT_COLUMN_NAMES[@]}"; do
+                    val="${row[$ndx]}"
+                    if [ "$val" != "NULL" ]; then
+                        CURROW[$name]="${row[$ndx]}"
+                    fi
+                    (( ndx++ ))
+                done
+
+                $CB_NAME
+                exval=$?
+                if [ $exval -ne 0 ]; then
+                    break;
+                fi
+            done
+        else
+            echo "result rows are"
+            IFS=$'\n'
+            echo "${RESULT_ROWS[*]}"
+        fi
+    fi
 }
 
 
