@@ -1,16 +1,14 @@
 #!/bin/bash
 
+declare -Ax ROW_INFO
+
 row_user()
 {
     local name="${CURROW['COLUMN_NAME']}"
     local dtype="${CURROW['DATA_TYPE']}"
     local default="${CURROW['COLUMN_DEFAULT']}"
 
-    echo -n "${name} is a ${dtype}"
-    if [ -n "${default}" ]; then
-        echo -n " with default='${default}'"
-    fi
-    echo
+    ROW_INFO[$name]="${dtype}"
 }
 
 export -f row_user
@@ -34,9 +32,12 @@ SELECT COLUMN_NAME,
   FROM COLUMNS
  WHERE TABLE_SCHEMA='${dbname}' AND TABLE_NAME='${tname}'"
 
-    echo "In database '${dbname}', table '${tname}' has the following columns:"
-    ./bashmysql "information_schema" "${query}" -c row_user
+    # Use 'source' so bashmysql runs in the local shell, maintaining
+    # access to the global variable ROW_INFO.
+    source ./bashmysql "information_schema" "${query}" -c row_user
 
+    echo "In database '${dbname}', table '${tname}' has the following columns:"
+    declare -p ROW_INFO
 }
 
 simple_test()
