@@ -44,33 +44,32 @@ show_usage()
 parse_arguments()
 {
     local -i argcount=$#
-    if [ $argcount -lt 2 ]; then
-        show_usage
-        return 1
-    else
-        BMS_DBNAME="$1"
-        BMS_QUERY="$2"
-
-        local arg
-        local state
-        
-        for arg in "${@:2}"; do
-            if [ "$arg" == '-s' ]; then
-                state="separator"
-            elif [ "$arg" == '-c' ]; then
-                state="callback"
-            else
-                if [ "$state" == "separator" ]; then
-                    RSEP="${arg:0:1}"
-                    FSEP="${arg:1:1}"
-                    VSEP="${arg:2:1}"
-                elif [ "$state" == "callback" ]; then
-                    CB_NAME="${arg}"
-                fi
-                state=
+    local arg
+    local state
+    
+    for arg in "$@"; do
+        if [ "$arg" == '-S' ]; then
+            echo "${RSEP}${FSEP}${VSEP}"
+            return 0
+        elif [ "$arg" == '-s' ]; then
+            state="separator"
+        elif [ "$arg" == '-c' ]; then
+            state="callback"
+        elif [ -n "$state" ]; then
+            if [ "$state" == "separator" ]; then
+                RSEP="${arg:0:1}"
+                FSEP="${arg:1:1}"
+                VSEP="${arg:2:1}"
+            elif [ "$state" == "callback" ]; then
+                CB_NAME="${arg}"
             fi
-        done
-    fi
+            state=
+        elif [ -z "$BMS_DBNAME" ]; then
+            BMS_DBNAME="$arg"
+        elif [ -z "$BMS_QUERY" ]; then
+            BMS_QUERY="$arg"
+        fi
+    done
 
     # Awk commands now that we have the RSEP value to use for the ORS:
     awk_split_from_meta="BEGIN{RS=\"\n\n\n\"; ORS=\"${RSEP}\";}{print}"
@@ -109,7 +108,7 @@ trim_string()
        echo "Bad Regexp" >&2
    fi
 
-   exit $exval
+   return $exval
 }
 
 serialize_column()
@@ -207,9 +206,9 @@ truncate_query_for_metadata()
    local -a qarr=( $( echo "${BMS_QUERY}" | awk "${awks}" - ) )
    if [ $? -eq 0 ]; then
       echo "${qarr[0]} WHERE 1=0"
-      exit 0
+      return 0
    else
-      exit 1
+      return 1
    fi
 }
 
@@ -388,4 +387,4 @@ if [ $exval -eq 0 ]; then
     exval=$?
 fi
 
-exit $exval
+return $exval
