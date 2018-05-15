@@ -50,7 +50,9 @@ parse_arguments()
     for arg in "$@"; do
         if [ "$arg" == '-S' ]; then
             echo "${RSEP}${FSEP}${VSEP}"
-            return 0
+            exit 0    # Immediately exit process with -S because this option
+                      # echos its return value. An echoed query result would
+                      # interfere with that.
         elif [ "$arg" == '-s' ]; then
             state="separator"
         elif [ "$arg" == '-c' ]; then
@@ -318,8 +320,8 @@ get_arrstr_META_COLUMNS()
         if [ $exval -eq 0 ]; then
            serialize_columns "${result}"
         else
-            echo "Error with MySQL query ($exval)" >&2
-            return 1
+            echo "Error ($exval) with MySQL query:" >&2
+            exit 1  # Terminate even sourcing call, query failure is fatal.
         fi
     fi
 
@@ -386,5 +388,3 @@ if [ $exval -eq 0 ]; then
     main
     exval=$?
 fi
-
-return $exval
