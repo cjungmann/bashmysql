@@ -24,9 +24,12 @@ declare awk_split_from_meta
 declare awk_split_into_columns
 declare awk_split_into_props
 
-declare -ag META_COLUMNS
-declare -ag RESULT_COLUMN_NAMES
-declare -ag RESULT_ROWS
+# We no longer declare these variables globally to ensure
+# that the variables declared local in function main() do not
+# have side-effects.
+# declare -ag META_COLUMNS
+# declare -ag RESULT_COLUMN_NAMES
+# declare -ag RESULT_ROWS
 
 show_usage()
 {
@@ -397,6 +400,7 @@ iterate_rows()
 main()
 {
     local -i exval
+    local -a META_COLUMNS RESULT_COLUMN_NAMES RESULT_ROWS
 
     local IFS="${RSEP}"
     META_COLUMNS=( $( get_arrstr_META_COLUMNS ) )
