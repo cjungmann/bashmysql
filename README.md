@@ -88,30 +88,102 @@ export -f data_ready
 ./bashmysql sys "SELECT * FROM sys_config" -c data_ready
 ~~~
 
-### Sample2: Raw Data Access
+### Sample2: Using BASH Function Source for Raw Data Access
 
 When *data_ready* is called by `bashmysql` and in turn calls other
 functions, *data_ready* and the called functions have direct access
 to the data in the `bashmysql` function that called *data_ready*.
 
+This example uses `source` to load the `bashmysql` and thus makes
+global variables and functions available to the script that calls
+`bashmysql`.
+
 This program is quite a bit longer than sample1, so it is left to
 the reader to access the file from the repository.
 
-There are several variables that are available:
+#### Global Variables
+
+The variables **RSEP**, **FSEP**, and **VSEP** are used as Record,
+Field, and Value SEParators when building the arrays. You can get
+the values in a three-character string by calling `bashmysql -S`.
+
+#### Query Result Variables
+
+The following variables available from the callback function called
+by `bashmysql`.  These variables are local to the function `main`
+from which the callback function is called.  Function `main` returns
+immediately after the callback function returns, ending the lifetime
+of the following array variables.
 
 - **RESULT_COLUMN_NAMES** is an array of column names in the order
   of the SELECT clause of the query.
 - **RESULT_ROWS** is the array of rows.  The fields in each row are
-  separated by the character in *FSEP*.
+  separated by the character in *FSEP* that can be easily converted
+  to an array of values.
 - **META_COLUMNS** is an array of name:value elements that record the
   metadata MySQL returns about the result columns.  This data used
   to build the RESULT_COLUMN_NAMES and RESULT_ROWS arrays, but is
   not yet otherwise used.  The metadata would be useful for random
   queries for which the column characteristics are not known in
   advance.
-- **RSEP**, **FSEP**, and **VSEP** for Record, Field, and Value
-  SEParators.
 
+#### Using Query Result Variables
+
+Unlike the sample1 example that uses function *iterate_rows* to get
+the rows, `sample2` directly accesses the arrays that contain the
+results of the query.  **RESULT_ROWS** are resolved into arrays of
+fields like this.  In particular,
+- Note how the raw row is extracted into the string variable
+  **rowstr**.
+- **IFS** is set to field separator character to split the **rowstr**
+  value into separate elements.  For efficiency, the *IFS* value is
+  set once outside the loop rather than closer to the statement that
+  uses it.
+- **rowstr** is resolved into array variable **row** using the
+  array-building operators `(  )`.
+- The **row** array does not identify the values, but the array
+  **RESULT_COLUMN_NAMES** is available to identify or confirm the
+  column names.  This array may be used primarily to confirm the
+  assumed column positions that should be know by the person who wrote
+  the query.
+
+~~~sh
+local rowstr
+local -a row
+local -i i, colcount
+local IFS="${FSEP}"
+
+colcount="${#RESULT_COLUMN_NAMES[@]}"
+for rowstr in "${RESULT_ROWS[@]}"; do
+    echo
+    echo "Row:"
+    row=( $( echo "$rowstr" ) )
+    for (( i=0; i<$colcount; i++ )); do
+       echo "${RESULT_COLUMN_NAMES[$i] = '${row[$i]}'"
+    done
+done
+~~~
+
+#### Helper Functions in bashmysql
+
+- **find_element_index** will return the index number of an array
+  element that matches a target value.  It works by comparing the
+  first parameter to the expanded array elements.  The following
+  invocation of the command will search for a column name.
+  ~~~sh
+  result=$(find_element_index "Name" "${RESULT_COLUMN_NAMES[@]}" )
+  if [ $? -eq 0 ]; then
+     use_column_name "${result}"
+  else
+     echo "Name not found in the column names list." >&2
+  fi
+  ~~~
+- **find_column_index** is a specialization of *find_element_index*
+  that seeks the column name, not needing to invoke the
+  *RESULT_COLUMN_NAMES* array.
+- **trim_string** removes leading and trailing spaces from a string,
+  leaving internal spaces alone.  It's used by the program, but is
+  available for other uses when `bashmysql` is invoked with `source`.
 
 ### Why Not Export Functions?
 
