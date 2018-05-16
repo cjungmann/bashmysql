@@ -8,11 +8,12 @@
 # result set (with WHERE 1=0) to avoid collecting results twice.
 #
 
-declare BMS_DBNAME
-declare BMS_QUERY
+declare -xg BMS_DBNAME
+declare -xg BMS_QUERY
 
-# These values hold values for printing a Record SEParator (RSEP) and a Field SEParator (FSEP)
-# These values can be used for IFS values to later parse the string into records of fields.
+# These values hold values for printing a Record SEParator (RSEP) and a
+# Field SEParator (FSEP). These values can be used for IFS values to
+# later parse the string into records of fields.
 declare RSEP=$'\a'    # \007
 declare FSEP=$'\006'
 declare VSEP=$':'
@@ -23,14 +24,14 @@ declare awk_split_from_meta
 declare awk_split_into_columns
 declare awk_split_into_props
 
-declare -a META_COLUMNS
-declare -a RESULT_COLUMN_NAMES
-declare -a RESULT_ROWS
+declare -ag META_COLUMNS
+declare -ag RESULT_COLUMN_NAMES
+declare -ag RESULT_ROWS
 
 show_usage()
 {
     echo "bashmysql usage:"
-    echo "./bashmysql <database name> <query> [-s <separators string>] [-c <callback>]"
+    echo "./bashmysql <database name> <query> [-S] [-s <separators string>] [-c <callback>]"
     echo
     echo "separators string, if included, is a three-character string"
     echo "the characters of which are, in order, the Record SEParator,"
@@ -79,6 +80,32 @@ parse_arguments()
     awk_split_into_props="BEGIN{RS=\"\n\"; ORS=\"${RSEP}\";}{print}"
 
     return 0
+}
+
+### find_element_index
+# Find the index of a value in an array.
+# Look at following function find_column_index() for an usage example.
+find_element_index()
+{
+    local target="$1"
+    local el
+    local -i ndx=0
+    for el in "${@:2}"; do
+        if [ "$el" == "$target" ]; then
+            echo $ndx
+            return 0
+        else
+            (( ndx++ ))
+        fi
+    done
+    echo -1
+    return 1
+}
+
+# Convenient specialization of find_element_index
+find_column_index()
+{
+    find_element_index "$1" "${RESULT_COLUMN_NAMES[@]}"
 }
 
 
@@ -321,11 +348,50 @@ get_arrstr_META_COLUMNS()
            serialize_columns "${result}"
         else
             echo "Error ($exval) with MySQL query:" >&2
-            exit 1  # Terminate even sourcing call, query failure is fatal.
+            exit 1  # Failed query is fatal.
         fi
     fi
 
     return 0
+}
+
+iterate_rows_raw()
+{
+    local cbfunc="$1"
+    local rowstr
+    local -a CURROW
+    for rowstr in "${RESULT_ROWS[@]}"; do
+        CURROW=( $( echo "${rowstr}" ) )
+        $cbfunc
+    done
+}
+
+iterate_rows()
+{
+    local cbfunc="$1"
+    local -i exval ndx
+    local rowstr IS name val
+    local -a row
+    local -A CURROW
+    for rowstr in "${RESULT_ROWS[@]}"; do
+        IFS="${FSEP}"
+        row=( $( echo "${rowstr}" ) )
+        ndx=0
+        CURROW=()
+        for name in "${RESULT_COLUMN_NAMES[@]}"; do
+            val="${row[$ndx]}"
+            if [ "$val" != "NULL" ]; then
+                CURROW[$name]="${row[$ndx]}"
+            fi
+            (( ndx++ ))
+        done
+
+        $cbfunc
+        exval=$?
+        if [ $exval -ne 0 ]; then
+            break;
+        fi
+    done
 }
 
 main()
@@ -348,31 +414,8 @@ main()
     fi
 
     if [ $exval -eq 0 ]; then
-        local -i ndx
-        local rowstr IFS name val
-        local -a row
-        local -A CURROW
-
         if [ -n CB_NAME ]; then
-            for rowstr in "${RESULT_ROWS[@]}"; do
-                IFS="${FSEP}"
-                row=( $( echo "${rowstr}" ) )
-                ndx=0
-                CURROW=()
-                for name in "${RESULT_COLUMN_NAMES[@]}"; do
-                    val="${row[$ndx]}"
-                    if [ "$val" != "NULL" ]; then
-                        CURROW[$name]="${row[$ndx]}"
-                    fi
-                    (( ndx++ ))
-                done
-
-                $CB_NAME
-                exval=$?
-                if [ $exval -ne 0 ]; then
-                    break;
-                fi
-            done
+            $CB_NAME
         else
             echo "result rows are"
             IFS=$'\n'
