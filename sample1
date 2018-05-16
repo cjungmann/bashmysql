@@ -1,0 +1,19 @@
+#!/bin/bash
+
+row_user()
+{
+   varname="${CURROW['variable']}"
+   varval="${CURROW['value']}"
+
+   echo "'${varname}'='${varval}'"
+}
+
+data_ready()
+{
+   iterate_rows row_user
+}
+
+export -f row_user
+export -f data_ready
+
+./bashmysql sys "SELECT * FROM sys_config" -c data_ready

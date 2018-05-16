@@ -1,0 +1,57 @@
+#!/bin/bash
+
+declare -ag COLUMN_WIDTHS
+declare -g FORMAT_STR
+
+# This step is not necessary if we call bashmysql with source:
+# Get separator characters used by bashmysql:
+# sepstr=$( ./bashmysql -S )
+# declare RSEP="${sepstr:0:1}"
+# declare FSEP="${sepstr:1:1}"
+# declare VSEP="${sepstr:2:1}"
+
+column_sizer()
+{
+    local -i colcount
+    colcount="${#RESULT_COLUMN_NAMES[@]}"
+    for (( i=0; i<$colcount; i++ )); do
+        COLUMN_WIDTHS[$i]=0
+    done
+
+    local -i collen
+    local rowstr
+    local -a row
+    local IFS="${FSEP}"
+    for rowstr in "${RESULT_ROWS[@]}"; do
+        row=( $( echo "${rowstr[*]}" ) )
+        for (( i=0; i<$colcount; i++ )); do
+            collen="${#row[$i]}"
+            if [ $collen -gt "${COLUMN_WIDTHS[$i]}" ]; then
+                COLUMN_WIDTHS[$i]="${collen}"
+            fi
+        done
+    done
+
+    FORMAT_STR=$( printf " %%%ds |" "${COLUMN_WIDTHS[@]}" )
+    FORMAT_STR="|${FORMAT_STR}"
+}
+
+column_printer()
+{
+    local rowstr
+    local -a row
+    local IFS="${FSEP}"
+    for rowstr in "${RESULT_ROWS[@]}"; do
+        row=( $( echo "${rowstr[*]}" ) )
+        printf "${FORMAT_STR}" "${row[@]}"
+        echo
+    done
+}
+
+data_ready()
+{
+    column_sizer
+    column_printer
+}
+
+source ./bashmysql sys "SELECT * FROM sys_config" -c data_ready
