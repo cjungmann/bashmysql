@@ -185,18 +185,11 @@ done
   leaving internal spaces alone.  It's used by the program, but is
   available for other uses when `bashmysql` is invoked with `source`.
 
-### Why Not Export Functions?
-
-If `bashmysql` is called without `source`, the `data_ready` and
-`row_user` functions will be invisible.  Another solution that works
-in this situation is to export the callback functions.  However,
-more complicated programs may want save for later use the information
-in a pass through the results.
-
-
-
+### Sample Progam get_table_info
 
 The sample program, `get_table_info` demonstrates different methods
-of using `bashmysql`.
+of using `bashmysql`.  It is left to the reader to study this file
+using what was explained in this guide.
+
 
 
