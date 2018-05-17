@@ -261,6 +261,7 @@ get_arrstr_RESULT_ROWS()
     local -a cols_arr
     local result
     local -i exval
+    local -i i stop
 
     qarr=(
         -B -N
@@ -289,6 +290,16 @@ get_arrstr_RESULT_ROWS()
 
         IFS=$'\t'
         cols_arr=( $( echo "${row}" ) )
+
+        # Empty NULL elements.  Would use sed,
+        # except forpossible embedded newlines.
+        stop=${#cols_arr[@]}
+        for (( i=0; i<$stop; i++ )); do
+            if [ "${cols_arr[$i]}" == "NULL" ]; then
+                cols_arr[$i]=''
+            fi
+        done
+            
         IFS="${FSEP}"
         echo -n "${cols_arr[*]}"
     done
