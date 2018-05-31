@@ -8,8 +8,9 @@
 # result set (with WHERE 1=0) to avoid collecting results twice.
 #
 
-declare -xg BMS_DBNAME
-declare -xg BMS_QUERY
+# Ensure these values are clear when the script begins
+declare -xg BMS_DBNAME=
+declare -xg BMS_QUERY=
 
 # These values hold values for printing a Record SEParator (RSEP) and a
 # Field SEParator (FSEP). These values can be used for IFS values to
@@ -50,7 +51,7 @@ parse_arguments()
     local -i argcount=$#
     local arg
     local state
-    
+
     for arg in "$@"; do
         if [ "$arg" == '-S' ]; then
             echo "${RSEP}${FSEP}${VSEP}"
