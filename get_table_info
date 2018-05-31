@@ -4,14 +4,20 @@ declare -Ax ROW_INFO
 
 row_user()
 {
-    local name="${CURROW['COLUMN_NAME']}"
+    local name="${CURROW[COLUMN_NAME]}"
     local dtype="${CURROW['DATA_TYPE']}"
     local default="${CURROW['COLUMN_DEFAULT']}"
 
     ROW_INFO[$name]="${dtype}"
 }
 
+data_ready()
+{
+    iterate_rows row_user
+}
+
 export -f row_user
+export -f data_ready
 
 get_table_columns()
 {
@@ -34,7 +40,7 @@ SELECT COLUMN_NAME,
 
     # Use 'source' so bashmysql runs in the local shell, maintaining
     # access to the global variable ROW_INFO.
-    source ./bashmysql "information_schema" "${query}" -c row_user
+    source ./bashmysql "information_schema" "${query}" -c data_ready
 
     echo "In database '${dbname}', table '${tname}' has the following columns:"
     declare -p ROW_INFO
@@ -42,7 +48,7 @@ SELECT COLUMN_NAME,
 
 simple_test()
 {
-    ./bashmysql MenuOrder "SELECT * FROM Day" -c row_user
+    ./bashmysql MenuOrder "SELECT * FROM Day" -c data_ready
 }
 
 is_array_member()
