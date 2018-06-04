@@ -450,16 +450,9 @@ main()
     fi
 }
 
-
-
-bashmysql()
-{
-    parse_arguments "$@"
+parse_arguments "$@"
+exval=$?
+if [ $exval -eq 0 ]; then
+    main
     exval=$?
-    if [ $exval -eq 0 ]; then
-        main
-        exval=$?
-    fi
-}
-
-bashmysql "$@"
+fi
