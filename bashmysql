@@ -52,6 +52,11 @@ parse_arguments()
     local arg
     local state
 
+    if [ $# -eq 0 ]; then
+        show_usage
+        exit 1
+    fi
+
     for arg in "$@"; do
         if [ "$arg" == '-S' ]; then
             echo "${RSEP}${FSEP}${VSEP}"
