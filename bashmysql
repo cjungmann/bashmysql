@@ -451,9 +451,15 @@ main()
 }
 
 
-parse_arguments "$@"
-exval=$?
-if [ $exval -eq 0 ]; then
-    main
+
+bashmysql()
+{
+    parse_arguments "$@"
     exval=$?
-fi
+    if [ $exval -eq 0 ]; then
+        main
+        exval=$?
+    fi
+}
+
+bashmysql "$@"
