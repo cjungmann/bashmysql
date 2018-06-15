@@ -383,11 +383,14 @@ get_arrstr_META_COLUMNS()
 iterate_rows_raw()
 {
     local cbfunc="$1"
-    local rowstr
+    local rowstr IFS="${FSEP}"
     local -a CURROW
     for rowstr in "${RESULT_ROWS[@]}"; do
         CURROW=( $( echo "${rowstr}" ) )
         $cbfunc
+        if [ $? -ne 0 ]; then
+           break
+        fi
     done
 }
 
@@ -395,7 +398,7 @@ iterate_rows()
 {
     local cbfunc="$1"
     local -i exval ndx
-    local rowstr IS name val
+    local rowstr IFS name val
     local -a row
     local -A CURROW
     for rowstr in "${RESULT_ROWS[@]}"; do
@@ -412,8 +415,7 @@ iterate_rows()
         done
 
         $cbfunc
-        exval=$?
-        if [ $exval -ne 0 ]; then
+        if [ $? -ne 0 ]; then
             break;
         fi
     done
