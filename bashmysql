@@ -25,7 +25,11 @@ declare awk_split_from_meta
 declare awk_split_into_columns
 declare awk_split_into_props
 
-# We no longer declare these variables globally to ensure
+declare -a HOST_ARGS
+# HOST_ARGS=( -h hostname -u username -ppassword )
+
+
+# we no longer declare these variables globally to ensure
 # that the variables declared local in function main() do not
 # have side-effects.
 # declare -ag META_COLUMNS
@@ -251,7 +255,8 @@ truncate_query_for_metadata()
       echo "${qarr[0]} WHERE 1=0"
       return 0
    else
-      return 1
+      echo "${BMS_QUERY} WHERE 1=0"
+      return 0
    fi
 }
 
@@ -274,6 +279,7 @@ get_arrstr_RESULT_ROWS()
         "${BMS_DBNAME}"
         -e
         "${BMS_QUERY}"
+        "${HOST_ARGS[@]}"
     )
 
     result=$( mysql "${qarr[@]}" )
@@ -366,6 +372,7 @@ get_arrstr_META_COLUMNS()
             -t -N --column-type-info
             -e
             "${tquery}"
+            "${HOST_ARGS[@]}"
         )
         result=$( mysql "${qarr[@]}" )
         exval=$?
