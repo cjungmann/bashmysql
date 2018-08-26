@@ -28,7 +28,6 @@ declare awk_split_into_props
 declare -a HOST_ARGS
 # HOST_ARGS=( -h hostname -u username -ppassword )
 
-
 # we no longer declare these variables globally to ensure
 # that the variables declared local in function main() do not
 # have side-effects.
@@ -248,16 +247,19 @@ serialize_columns()
 # order to harvest the result columns' metadata.
 truncate_query_for_metadata()
 {
+   local rval
    local awks="BEGIN{RS=\"WHERE|LIMIT|GROUP BY|HAVING|ORDER BY\"; ORS=\"${RSEP}\";}{print \$0}"
    local IFS="${RSEP}"
    local -a qarr=( $( echo "${BMS_QUERY}" | awk "${awks}" - ) )
+
    if [ $? -eq 0 ]; then
-      echo "${qarr[0]} WHERE 1=0"
-      return 0
+      rval="${qarr[0]}"
    else
-      echo "${BMS_QUERY} WHERE 1=0"
-      return 0
+      rval="${BMS_QUERY}"
    fi
+
+   echo "${rval} WHERE 1=0"
+   return 0
 }
 
 ## get_arrstr_RESULT_ROWS
